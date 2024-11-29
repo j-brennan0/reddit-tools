@@ -1,0 +1,81 @@
+<?php
+
+// Edit these elements to fit your data
+$subreddit = "EVCanada";
+$mode = "top";
+$timespan = "all";
+$poststoget = 1000;
+
+// Basic script configuration
+date_default_timezone_set("UTC");
+set_time_limit(3600 * 5);
+ini_set("memory_limit", "100M");
+ini_set("error_reporting", 1);
+
+// Construct call URL
+$url = "https://www.reddit.com/r/$subreddit/$mode/.json";
+$url .= ($mode == "top" || $mode == "controversial") ? "?t=$timespan" : "";
+
+// Set data directory
+$workdir = getcwd();
+$jsondir = $workdir . "/data_$subreddit/";
+
+if (!file_exists($jsondir)) {
+    if (!mkdir($jsondir)) {
+        die("Failed to create folder. Ensure the script can write to its directory.");
+    }
+}
+
+// Prepare output file
+$timestamp = date("Y-m-d_H-i");
+$fn_output = $jsondir . "list_{$subreddit}_{$mode}_";
+$fn_output .= ($mode == "top" || $mode == "controversial") ? $timespan . "_" : "";
+$fn_output .= "$timestamp.json";
+
+// Custom User-Agent
+$options = [
+    'http' => [
+        'header' => 'User-Agent: custom-script/1.0'
+    ]
+];
+$context = stream_context_create($options);
+
+// Fetch data
+$posts = [];
+$postcount = 0;
+$after = "";
+
+while ($postcount < $poststoget) {
+    $currentUrl = $url;
+    if ($after != "") {
+        $currentUrl .= "&after=$after";
+    }
+
+    $data = file_get_contents($currentUrl, false, $context);
+    if ($data === false) {
+        $error = error_get_last();
+        die("Failed to fetch data: " . $error['message']);
+    }
+
+    $data = json_decode($data);
+    if ($data === null || !isset($data->data->children)) {
+        die("Invalid JSON response received from Reddit.");
+    }
+
+    $posts = array_merge($posts, $data->data->children);
+    $postcount = count($posts);
+
+    $after = $data->data->after;
+    if ($after === null) {
+        break;
+    }
+
+    echo $postcount . " ";
+    sleep(2); // Prevent hitting Reddit API rate limits
+}
+
+// Write posts to the output file
+file_put_contents($fn_output, json_encode($posts));
+echo "\n\nFinished\n\n";
+
+?>
